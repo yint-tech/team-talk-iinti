@@ -5,22 +5,22 @@
 ## 前置依赖
 
 - JDK 17+
-- Docker & Docker Compose（用于 PostgreSQL 和 MinIO）
+- Docker & Docker Compose（用于 PostgreSQL）
 - Android Studio / IntelliJ IDEA（推荐）
 - Android SDK（构建 Android 客户端时需要）
 
 ## 一键启动
 
 ```bash
-# 1. 启动基础设施（PostgreSQL 16 + MinIO）
+# 1. 启动基础设施（PostgreSQL 16）
 docker compose up -d
 
 # 2. 启动服务端（前台运行，端口 8080/5100）
 ./gradlew :server:run
 
 # 3. 启动客户端（二选一）
-./gradlew :desktop:run                  # Desktop 客户端
-./gradlew :android:assembleDebug        # Android APK
+./gradlew :desktop:runDev                   # Desktop 客户端（dev profile）
+./gradlew :android:assembleDevDebug         # Android APK（dev profile）
 ```
 
 ### IDEA 单步调试
@@ -40,9 +40,6 @@ docker compose up -d
 | 服务 | 端口 | 数据卷 | 用途 |
 |------|------|--------|------|
 | PostgreSQL 16 | 5432 | `~/.tk/pgdata` | 关系型数据（用户/频道/好友/会话） |
-| MinIO | 9000 (API) / 9001 (Console) | `~/.tk/miniodata` | 对象存储（文件/图片） |
-
-MinIO Console: http://localhost:9001 （默认账号 `minioadmin` / `minioadmin`）
 
 ### 数据库
 
@@ -57,14 +54,15 @@ MinIO Console: http://localhost:9001 （默认账号 `minioadmin` / `minioadmin`
 ### 基本使用
 
 ```bash
-./gradlew :desktop:run                    # 默认连 localhost:8080
-./gradlew :desktop:compileKotlin          # 仅编译检查（不启动）
+./gradlew :desktop:runDev                   # dev profile（默认连 localhost:8080）
+./gradlew :desktop:runDemo                  # demo profile（连接演示站）
+./gradlew :desktop:compileKotlin            # 仅编译检查（不启动）
 ```
 
 ### 连接远程服务器
 
 ```bash
-./gradlew :desktop:run -PbuildProfile=demo
+./gradlew :desktop:runDemo                  # 连接演示站
 ```
 
 ### 多实例运行
@@ -94,8 +92,8 @@ MinIO Console: http://localhost:9001 （默认账号 `minioadmin` / `minioadmin`
 ### 构建与安装
 
 ```bash
-./gradlew :android:assembleDebug
-# 产物: android/build/outputs/apk/
+./gradlew :android:assembleDevDebug
+# 产物: android/build/outputs/apk/dev/debug/
 ```
 
 ### 服务端地址自动检测
@@ -109,14 +107,14 @@ MinIO Console: http://localhost:9001 （默认账号 `minioadmin` / `minioadmin`
 
 ### 手动指定连接地址
 
-通过 Gradle Profile 系统管理不同环境的服务器地址，详见 [Gradle Profile 系统](#gradle-profile-系统)。默认 `dev` profile 连接 `localhost`，切换到 `demo` profile 连接演示站：
+通过 Gradle 多渠道构建系统管理不同环境的服务器地址，详见 [Gradle 多渠道构建系统](#gradle-多渠道构建系统)。默认 `dev` profile 连接 `localhost`，切换到 `demo` profile 连接演示站：
 
 ```bash
 # 连接演示站
-./gradlew :android:assembleDebug -PbuildProfile=demo
+./gradlew :android:assembleDemoDebug
 
 # 自定义环境：创建 gradle/profiles/my-server.properties 后
-./gradlew :android:assembleDebug -PbuildProfile=my-server
+./gradlew :android:assembleMy-serverDebug
 ```
 
 配置优先级（从高到低）：
@@ -151,10 +149,6 @@ MinIO Console: http://localhost:9001 （默认账号 `minioadmin` / `minioadmin`
 | 数据库用户 | `postgres` | `DATABASE_USER` |
 | 数据库密码 | `postgres` | `DATABASE_PASSWORD` |
 | JWT 密钥 | 内置默认值 | `JWT_SECRET` |
-| MinIO 端点 | `http://127.0.0.1:9000` | `MINIO_ENDPOINT` |
-| MinIO AccessKey | `minioadmin` | `MINIO_ACCESS_KEY` |
-| MinIO SecretKey | `minioadmin` | `MINIO_SECRET_KEY` |
-| MinIO Bucket | `teamtalk` | `MINIO_BUCKET` |
 | 文件大小上限 | `52428800`（50MB） | `FILE_MAX_SIZE_BYTES` |
 
 RocksDB 和 Lucene 的数据目录由 `Environment` 类管理，路径为 `$dataRoot/rocksdb/` 和 `$dataRoot/lucene-index/`，不通过配置文件设置。
@@ -169,9 +163,9 @@ RocksDB 和 Lucene 的数据目录由 `Environment` 类管理，路径为 `$data
 
 详见 [deploy.md](deploy.md)。
 
-## Gradle Profile 系统
+## Gradle 多渠道构建系统
 
-所有环境差异（服务器地址、TCP 主机、部署配置等）通过 Profile 文件管理，位于 `gradle/profiles/` 目录：
+项目采用多渠道构建体系，自动扫描 `gradle/profiles/*.properties` 为每个 Profile 注册独立的构建任务。每个 Profile 拥有独立的 BuildConfig（Android）和 JVM 系统属性（Desktop），确保构建缓存正确隔离。
 
 ```bash
 gradle/profiles/
@@ -186,20 +180,23 @@ gradle/profiles/
 | 平台 | 实现文件 | 策略 |
 |------|----------|------|
 | commonMain | `ServerConfig.kt` | expect 声明 + 数据类 |
-| Desktop | `ServerConfig.desktop.kt` | 构建时从 Profile 注入，默认 `localhost:8080` |
-| Android | `ServerConfig.android.kt` | 构建时从 Profile 注入 BuildConfig + 模拟器自动检测 `10.0.2.2` |
+| Desktop | `ServerConfig.desktop.kt` | 构建时从 Profile 注入 JVM 系统属性，默认 `localhost:8080` |
+| Android | `ServerConfig.android.kt` | Android Product Flavors 生成各自的 BuildConfig + 模拟器自动检测 `10.0.2.2` |
 
 ```bash
-# 默认 dev profile（连接 localhost）
-./gradlew :desktop:run
+# ── Desktop ──
+./gradlew :desktop:runDev                     # dev profile（连接 localhost）
+./gradlew :desktop:runDemo                    # demo profile（连接演示站）
 
-# 指定 demo profile（连接演示站）
-./gradlew :desktop:run -PbuildProfile=demo
+# ── Android ──
+./gradlew :android:assembleDevDebug           # dev profile APK
+./gradlew :android:assembleDemoRelease        # demo profile APK
 
-# 自定义环境
+# ── 自定义 Profile ──
 cp gradle/profiles/production.properties gradle/profiles/my-company.properties
 # 编辑 my-company.properties 后：
-./gradlew :desktop:run -PbuildProfile=my-company
+./gradlew :desktop:runMy-company
+./gradlew :android:assembleMy-companyRelease
 ```
 
 ## 常见问题
@@ -215,16 +212,6 @@ docker compose logs postgres
 
 # 重启
 docker compose restart postgres
-```
-
-### MinIO 连接失败
-
-```bash
-# 检查容器和健康状态
-docker compose ps minio
-
-# 访问 Console 确认
-open http://localhost:9001
 ```
 
 ### Desktop 编译报错
