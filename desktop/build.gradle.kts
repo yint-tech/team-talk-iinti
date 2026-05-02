@@ -1,16 +1,13 @@
-plugins {
-    kotlin("jvm")
-    id("org.jetbrains.compose")
-    id("org.jetbrains.kotlin.plugin.compose")
-    kotlin("plugin.serialization")
-}
-
 import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.compose)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+}
 
-val logbackVersion: String by rootProject.extra
-val kotlinxSerializationVersion: String by rootProject.extra
-val packageVersion: String by rootProject.extra
+
 
 // --- Profile 全量数据（多渠道构建） ---
 val allProfiles: Map<String, Map<String, String>> by rootProject.extra
@@ -22,6 +19,7 @@ val tcpHost: String by rootProject.extra
 val tcpPort: String by rootProject.extra
 val buildProfile: String by rootProject.extra
 val showAdvancedSettings: String by rootProject.extra
+val packageVersion: String by rootProject.extra
 
 val currentTargetFormats = when {
     OperatingSystem.current().isWindows -> listOf(TargetFormat.Msi)
@@ -40,12 +38,11 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerializationVersion")
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jni:1.6.3")
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-material3:1.6.3")
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:1.6.3")
-    implementation("io.github.kdroidfilter:composenativetray:1.1.0")
-    runtimeOnly("ch.qos.logback:logback-classic:$logbackVersion")
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.bundles.nucleus)
+    implementation(libs.composenativetray)
+    implementation(libs.jna)
+    runtimeOnly(libs.logback.classic)
 }
 
 compose.desktop {
@@ -132,14 +129,14 @@ allProfiles.forEach { (profileName, props) ->
     if (profileName == activeProfileName) {
         // 活跃 profile：注册别名指向原 run 任务
         tasks.register("run$cap") {
-            group = "application"
+            group = "run"
             description = "Run desktop app with profile: $profileName"
             dependsOn("run")
         }
     } else {
         // 非活跃 profile：注册独立 JavaExec 任务
         tasks.register<JavaExec>("run$cap") {
-            group = "application"
+            group = "run"
             description = "Run desktop app with profile: $profileName"
             mainClass.set("com.virjar.tk.MainKt")
             classpath = sourceSets["main"].runtimeClasspath
@@ -167,7 +164,7 @@ allProfiles.forEach { (profileName, props) ->
             if (activeProfileName != profileName) {
                 throw GradleException(
                     "package${cap}DistributionForCurrentOS requires -PbuildProfile=$profileName.\n" +
-                    "Use: ./gradlew :desktop:package${cap}DistributionForCurrentOS -PbuildProfile=$profileName"
+                            "Use: ./gradlew :desktop:package${cap}DistributionForCurrentOS -PbuildProfile=$profileName"
                 )
             }
         }
